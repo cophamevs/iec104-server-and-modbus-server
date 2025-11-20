@@ -98,14 +98,14 @@ Expected output:
 ========================================
 Running Phase 1 Tests (data_types)...
 ========================================
-✓ All data_types tests passed!
+All data_types tests passed!
 
 ... (all phases)
 
 ========================================
 Running Phase 5 Tests (utils)...
 ========================================
-✓ All utils tests passed!
+All utils tests passed!
 ```
 
 ---
@@ -293,14 +293,14 @@ Running data_types test suite
 ===========================================
 
 Testing get_data_type_info()...
-  ✓ M_SP_TB_1 found
-  ✓ M_ME_NC_1 found
-  ✓ Invalid type returns NULL
+  M_SP_TB_1 found
+  M_ME_NC_1 found
+  Invalid type returns NULL
 
 ... (more tests)
 
 ===========================================
-✓ All data_types tests passed!
+All data_types tests passed!
 ===========================================
 ```
 
@@ -550,38 +550,38 @@ bool validate_config(const char* filename) {
 
 ### 1. Configuration Management
 
-- ✅ Keep config files in version control
-- ✅ Use meaningful IOA ranges (e.g., 100-199 for sensors)
-- ✅ Document IOA assignments
-- ✅ Validate config before deployment
+- Keep config files in version control
+- Use meaningful IOA ranges (e.g., 100-199 for sensors)
+- Document IOA assignments
+- Validate config before deployment
 
 ### 2. Error Handling
 
-- ✅ Always check return values
-- ✅ Use appropriate log levels
-- ✅ Clean up resources on error
-- ✅ Provide meaningful error messages
+- Always check return values
+- Use appropriate log levels
+- Clean up resources on error
+- Provide meaningful error messages
 
 ### 3. Performance
 
-- ✅ Use deadband for analog values
-- ✅ Configure appropriate offline_udt_time
-- ✅ Monitor memory usage
-- ✅ Profile critical paths
+- Use deadband for analog values
+- Configure appropriate offline_udt_time
+- Monitor memory usage
+- Profile critical paths
 
 ### 4. Security
 
-- ✅ Bind to specific IP if needed
-- ✅ Use firewall rules
-- ✅ Monitor connections
-- ✅ Log security events
+- Bind to specific IP if needed
+- Use firewall rules
+- Monitor connections
+- Log security events
 
 ### 5. Monitoring
 
-- ✅ Enable structured logging
-- ✅ Use log aggregation tools
-- ✅ Monitor error rates
-- ✅ Set up alerts
+- Enable structured logging
+- Use log aggregation tools
+- Monitor error rates
+- Set up alerts
 
 ---
 
