@@ -1,0 +1,31 @@
+LIB60870_HOME=lib60870/lib60870-C
+
+PROJECT_SERVER = json-iec104-server-new
+PROJECT_SERVER_SOURCES = src/main.c \
+                         src/config/config_parser.c \
+                         src/data/data_types.c \
+                         src/data/data_manager.c \
+                         src/protocol/interrogation.c \
+                         src/protocol/command_handler.c \
+                         src/protocol/clock_sync.c \
+                         src/threads/periodic_sender.c \
+                         src/client/client_manager.c \
+                         src/input/input_handler.c \
+                         src/utils/logger.c \
+                         src/utils/error_codes.c \
+                         cJSON/cJSON.c
+
+include $(LIB60870_HOME)/make/target_system.mk
+include $(LIB60870_HOME)/make/stack_includes.mk
+
+CFLAGS += -Wall -I./src -I./include
+
+all:	$(PROJECT_SERVER)
+
+include $(LIB60870_HOME)/make/common_targets.mk
+
+$(PROJECT_SERVER):	$(PROJECT_SERVER_SOURCES) $(LIB_NAME)
+	$(CC) $(CFLAGS) $(LDFLAGS) -g -o $(PROJECT_SERVER) $(PROJECT_SERVER_SOURCES) $(INCLUDES) $(LIB_NAME) $(LDLIBS) -lpthread
+
+clean:
+	rm -f $(PROJECT_SERVER)

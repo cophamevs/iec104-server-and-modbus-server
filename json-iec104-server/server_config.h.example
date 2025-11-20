@@ -1,0 +1,61 @@
+#ifndef SERVER_CONFIG_H_
+#define SERVER_CONFIG_H_
+
+#define ASDU 100
+#define IP_ADDRESS_LOCAL "10.0.0.10"
+#define IP_ADDRESS_FER_1 "10.0.0.20"
+#define IP_ADDRESS_FER_2 "10.0.0.30"
+
+#define BASE_ADDRESS_M_SP_TB_1 4097
+#define BASE_ADDRESS_M_DP_TB_1 6144
+#define BASE_ADDRESS_M_ME_TD_1 8193
+#define BASE_ADDRESS_M_IT_NA_1 12289
+#define BASE_ADDRESS_C_SC_NA_1 24577
+#define BASE_ADDRESS_C_DC_NA_1 26624
+#define BASE_ADDRESS_C_SE_NA_1 20481
+
+#define NUMBERS_OF_M_SP_TB_1 10
+#define NUMBERS_OF_M_DP_TB_1 5
+#define NUMBERS_OF_M_ME_TD_1 20
+#define NUMBERS_OF_M_IT_TB_1 2
+#define NUMBERS_OF_C_SC_NA_1 2048
+#define NUMBERS_OF_C_DC_NA_1 2048
+#define NUMBERS_OF_C_SE_NA_1 2048
+
+/* uncomment for clocksync from iec message
+   IMPORTANT clock set command use root rights */
+//#define CLOCKSYNC_FROM_IEC
+
+/* Check range of datamodel */
+#define IEC_ADDRESS_MIN 0
+#define IEC_ADDRESS_MAX 65535
+
+#if (BASE_ADDRESS_M_SP_TB_1 + NUMBERS_OF_M_SP_TB_1) > IEC_ADDRESS_MAX
+#error Datamodel of M_SP_TB_1 out of range
+#endif
+
+#if (BASE_ADDRESS_M_DP_TB_1 + NUMBERS_OF_M_DP_TB_1) > IEC_ADDRESS_MAX
+#error Datamodel of M_DP_TB_1 out of range
+#endif
+
+#if (BASE_ADDRESS_M_ME_TD_1 + NUMBERS_OF_M_ME_TD_1) > IEC_ADDRESS_MAX
+#error Datamodel of M_ME_TD_1 out of range
+#endif
+
+#if (BASE_ADDRESS_M_IT_NA_1 + NUMBERS_OF_M_IT_NA_1) > IEC_ADDRESS_MAX
+#error Datamodel of M_IT_NA_1 out of range
+#endif
+
+#if (BASE_ADDRESS_C_SC_NA_1 + NUMBERS_OF_C_SC_NA_1) > IEC_ADDRESS_MAX
+#error Datamodel of C_SC_NA_1 out of range
+#endif
+
+#if (BASE_ADDRESS_C_DC_NA_1 + NUMBERS_OF_C_DC_NA_1) > IEC_ADDRESS_MAX
+#error Datamodel of C_DC_NA_1 out of range
+#endif
+
+#if (BASE_ADDRESS_C_SE_NA_1 + NUMBERS_OF_C_SE_NA_1) > IEC_ADDRESS_MAX
+#error Datamodel of C_SE_NA_1 out of range
+#endif
+
+#endif /* SERVER_CONFIG_H_ */

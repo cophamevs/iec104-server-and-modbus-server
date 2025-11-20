@@ -1,0 +1,360 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <signal.h>
+#include <unistd.h>
+#include <pthread.h>
+
+#include "cs104_slave.h"
+#include "hal_thread.h"
+#include "hal_time.h"
+
+#include "config/config_parser.h"
+#include "data/data_manager.h"
+#include "protocol/interrogation.h"
+#include "protocol/command_handler.h"
+#include "protocol/clock_sync.h"
+#include "threads/periodic_sender.h"
+#include "utils/logger.h"
+#include "utils/error_codes.h"
+#include "../cJSON/cJSON.h"
+
+// Global variables
+static CS104_Slave slave = NULL;
+static bool running = true;
+
+// Configuration globals (externed in other files)
+uint32_t offline_udt_time = 0;
+float deadband_M_ME_NC_1_percent = 0.0f;
+int ASDU = 1;
+char command_mode[64] = "direct";
+int tcpPort = 2404;
+char local_ip[64] = "0.0.0.0";
+CS101_AppLayerParameters alParameters = NULL;
+
+// Client management
+#define MAX_CLIENTS 10
+typedef struct {
+    char ip_address[128];
+    IMasterConnection connection;
+    uint64_t connect_time;
+    bool is_active;
+} ConnectedClient;
+
+static ConnectedClient connected_clients[MAX_CLIENTS];
+static pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+static int client_count = 0;
+
+// Signal handler
+void sigint_handler(int signalId) {
+    running = false;
+}
+
+// Client management functions
+static void add_client(IMasterConnection connection, const char* ip_address) {
+    pthread_mutex_lock(&clients_mutex);
+
+    // Check if client already exists
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (connected_clients[i].is_active &&
+            connected_clients[i].connection == connection) {
+            pthread_mutex_unlock(&clients_mutex);
+            return;
+        }
+    }
+
+    // Find empty slot
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (!connected_clients[i].is_active) {
+            strncpy(connected_clients[i].ip_address, ip_address, sizeof(connected_clients[i].ip_address) - 1);
+            connected_clients[i].ip_address[sizeof(connected_clients[i].ip_address) - 1] = '\0';
+            connected_clients[i].connection = connection;
+            connected_clients[i].connect_time = Hal_getTimeInMs();
+            connected_clients[i].is_active = true;
+            client_count++;
+            LOG_INFO("Client connected: %s (total: %d)", ip_address, client_count);
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+static void remove_client(IMasterConnection connection) {
+    pthread_mutex_lock(&clients_mutex);
+
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (connected_clients[i].is_active &&
+            connected_clients[i].connection == connection) {
+            LOG_INFO("Client disconnected: %s (total: %d)",
+                     connected_clients[i].ip_address, client_count - 1);
+            connected_clients[i].is_active = false;
+            connected_clients[i].connection = NULL;
+            client_count--;
+            break;
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+// Connection event handler
+static void connectionEventHandler(void* parameter, IMasterConnection connection,
+                                   CS104_PeerConnectionEvent event) {
+    (void)parameter;
+
+    switch (event) {
+        case CS104_CON_EVENT_CONNECTION_OPENED: {
+            char peerAddr[128];
+            IMasterConnection_getPeerAddress(connection, peerAddr, sizeof(peerAddr));
+            add_client(connection, peerAddr);
+            break;
+        }
+        case CS104_CON_EVENT_CONNECTION_CLOSED:
+            remove_client(connection);
+            break;
+        case CS104_CON_EVENT_ACTIVATED:
+            LOG_DEBUG("Connection activated (STARTDT)");
+            break;
+        case CS104_CON_EVENT_DEACTIVATED:
+            LOG_DEBUG("Connection deactivated (STOPDT)");
+            break;
+    }
+}
+
+// Helper to convert double input to DataValue
+static void convert_input_to_value(TypeID type, double input_val, int qualifier, DataValue* out_val) {
+    out_val->type = get_data_type_info(type)->value_type;
+    out_val->has_quality = get_data_type_info(type)->has_quality;
+    out_val->has_timestamp = get_data_type_info(type)->has_time_tag;
+    out_val->quality = qualifier;
+    CP56Time2a_createFromMsTimestamp(out_val->timestamp, Hal_getTimeInMs());
+
+    switch (out_val->type) {
+        case DATA_VALUE_TYPE_BOOL:
+            out_val->value.bool_val = (bool)input_val;
+            break;
+        case DATA_VALUE_TYPE_DOUBLE_POINT:
+            out_val->value.dp_val = (DoublePointValue)input_val;
+            break;
+        case DATA_VALUE_TYPE_INT16:
+            out_val->value.int16_val = (int16_t)input_val;
+            break;
+        case DATA_VALUE_TYPE_UINT32:
+            out_val->value.uint32_val = (uint32_t)input_val;
+            break;
+        case DATA_VALUE_TYPE_FLOAT:
+            out_val->value.float_val = (float)input_val;
+            break;
+    }
+}
+
+// Process JSON input from stdin
+static void process_input_line(const char* line) {
+    cJSON* json = cJSON_Parse(line);
+    if (!json) {
+        LOG_ERROR("Invalid JSON input");
+        return;
+    }
+
+    // Check for commands: {"cmd":"stop"} or {"cmd":"get_connected_clients"}
+    cJSON* cmd_item = cJSON_GetObjectItem(json, "cmd");
+    if (cmd_item && cJSON_IsString(cmd_item)) {
+        if (strcmp(cmd_item->valuestring, "stop") == 0) {
+            running = false;
+            LOG_INFO("Shutdown command received");
+            cJSON_Delete(json);
+            return;
+        }
+        else if (strcmp(cmd_item->valuestring, "get_connected_clients") == 0) {
+            // Build JSON response with connected clients
+            cJSON* response = cJSON_CreateObject();
+            cJSON* clients_array = cJSON_CreateArray();
+
+            pthread_mutex_lock(&clients_mutex);
+            for (int i = 0; i < MAX_CLIENTS; i++) {
+                if (connected_clients[i].is_active) {
+                    cJSON* client_obj = cJSON_CreateObject();
+                    cJSON_AddStringToObject(client_obj, "ip", connected_clients[i].ip_address);
+                    cJSON_AddNumberToObject(client_obj, "connect_time", (double)connected_clients[i].connect_time);
+                    cJSON_AddItemToArray(clients_array, client_obj);
+                }
+            }
+            pthread_mutex_unlock(&clients_mutex);
+
+            cJSON_AddItemToObject(response, "connected_clients", clients_array);
+            cJSON_AddNumberToObject(response, "count", client_count);
+
+            char* json_str = cJSON_PrintUnformatted(response);
+            if (json_str) {
+                printf("%s\n", json_str);
+                fflush(stdout);
+                free(json_str);
+            }
+
+            cJSON_Delete(response);
+            cJSON_Delete(json);
+            return;
+        }
+    }
+
+    // Parse data update: {"type":"M_SP_TB_1", "address":100, "value":1, "qualifier":0}
+    cJSON* type_item = cJSON_GetObjectItem(json, "type");
+    cJSON* value_item = cJSON_GetObjectItem(json, "value");
+
+    if (type_item && value_item) {
+        // Handle string type (e.g. "M_SP_TB_1") or number
+        TypeID type_id = 0;
+        if (cJSON_IsString(type_item)) {
+            const DataTypeInfo* info = get_data_type_info_by_name(type_item->valuestring);
+            if (info) type_id = info->type_id;
+        } else if (cJSON_IsNumber(type_item)) {
+            type_id = (TypeID)type_item->valueint;
+        }
+
+        cJSON* addr_item = cJSON_GetObjectItem(json, "address");
+        cJSON* qual_item = cJSON_GetObjectItem(json, "qualifier");
+
+        if (type_id > 0 && addr_item && cJSON_IsNumber(addr_item)) {
+            int ioa = addr_item->valueint;
+
+            // Parse qualifier - support both string and number
+            int qual = 0; // Default to QUALITY_GOOD
+            if (qual_item) {
+                if (cJSON_IsString(qual_item)) {
+                    // String qualifier like "IEC60870_QUALITY_INVALID"
+                    qual = parse_qualifier_from_string(qual_item->valuestring);
+                } else if (cJSON_IsNumber(qual_item)) {
+                    // Numeric qualifier like 1
+                    qual = qual_item->valueint;
+                }
+            }
+
+            LOG_INFO("Processing update: Type=%d, IOA=%d, Val=%.3f, Qual=%d",
+                     type_id, ioa, value_item->valuedouble, qual);
+
+            DataTypeContext* ctx = get_data_context(type_id);
+            if (ctx) {
+                DataValue val;
+                convert_input_to_value(type_id, value_item->valuedouble, qual, &val);
+                
+                if (update_data(ctx, slave, ioa, &val)) {
+                    // Data changed and updated
+                    // If client connected, send spontaneous message
+                    if (is_client_connected(slave)) {
+                        CS101_AppLayerParameters alParams = CS104_Slave_getAppLayerParameters(slave);
+                        CS101_ASDU newAsdu = CS101_ASDU_create(
+                            alParams, false, CS101_COT_SPONTANEOUS,
+                            0, ASDU, false, false  // OA=0, CA=ASDU
+                        );
+                        
+                        if (newAsdu) {
+                            InformationObject io = create_io_for_type(type_id, ioa, &val);
+                            if (io) {
+                                CS101_ASDU_addInformationObject(newAsdu, io);
+                                InformationObject_destroy(io);
+                                CS104_Slave_enqueueASDU(slave, newAsdu);
+                                LOG_INFO("Sent spontaneous update for IOA %d (ASDU: %d)", ioa, ASDU);
+                            }
+                            CS101_ASDU_destroy(newAsdu);
+                        }
+                    } else {
+                        LOG_INFO("Data updated for IOA %d, but no client connected", ioa);
+                    }
+                } else {
+                     LOG_DEBUG("Data not updated (unchanged or error) for IOA %d", ioa);
+                }
+            } else {
+                LOG_WARN("Unknown data type ID: %d", type_id);
+            }
+        }
+    }
+
+    cJSON_Delete(json);
+}
+
+int main(int argc, char** argv) {
+    // Setup signal handler
+    signal(SIGINT, sigint_handler);
+
+    // Initialize logger
+    logger_init(LOG_LEVEL_INFO);
+    // Original code printed JSON to stdout. Logger prints to stderr by default?
+    // Let's check logger.c. Yes, fprintf(stderr, ...). So stdout is free for JSON output if needed.
+    // But wait, original code used printf for EVERYTHING including logs.
+    // The wrapper probably reads stdout.
+    // If I use logger to stderr, the wrapper might miss it if it only captures stdout.
+    // For now, let's stick to stderr for logs and stdout for JSON responses (commands).
+
+    // Initialize data contexts
+    init_data_contexts();
+
+    // Load configuration
+    const char* config_file = "iec104_config.json";
+    if (argc > 1) {
+        config_file = argv[1];
+    }
+
+    if (!init_config_from_file(config_file)) {
+        LOG_ERROR("Failed to load configuration");
+        return 1;
+    }
+
+    // Create slave
+    slave = CS104_Slave_create(200000, 200000);
+    if (!slave) {
+        LOG_ERROR("Failed to create slave instance");
+        return 1;
+    }
+
+    // Get AppLayerParameters for global usage
+    alParameters = CS104_Slave_getAppLayerParameters(slave);
+
+    // Configure slave
+    CS104_Slave_setLocalPort(slave, tcpPort);
+    CS104_Slave_setLocalAddress(slave, local_ip);
+    
+    CS104_Slave_setServerMode(slave, CS104_MODE_SINGLE_REDUNDANCY_GROUP);
+
+    // Set callbacks
+    CS104_Slave_setInterrogationHandler(slave, interrogationHandler, NULL);
+    CS104_Slave_setASDUHandler(slave, asduHandler, NULL);
+    CS104_Slave_setClockSyncHandler(slave, clockSyncHandler, NULL);
+    CS104_Slave_setConnectionEventHandler(slave, connectionEventHandler, NULL);
+    
+    // Start server
+    CS104_Slave_start(slave);
+    if (!CS104_Slave_isRunning(slave)) {
+        LOG_ERROR("Failed to start server");
+        goto exit;
+    }
+
+    LOG_INFO("Server started on %s:%d", local_ip, tcpPort);
+
+    // Start periodic sender
+    start_periodic_sender(slave);
+
+    // Main loop - read stdin
+    char buffer[1024];
+    while (running) {
+        if (fgets(buffer, sizeof(buffer), stdin)) {
+            // Remove newline
+            buffer[strcspn(buffer, "\n")] = 0;
+            if (strlen(buffer) > 0) {
+                process_input_line(buffer);
+            }
+        } else {
+            // EOF or error
+            Thread_sleep(100);
+        }
+    }
+
+exit:
+    stop_periodic_sender();
+    CS104_Slave_stop(slave);
+    CS104_Slave_destroy(slave);
+    cleanup_data_contexts();
+    
+    LOG_INFO("Server stopped");
+    return 0;
+}
