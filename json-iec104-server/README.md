@@ -4,8 +4,8 @@ A well-structured, modular implementation of an IEC 60870-5-104 server with comp
 
 ## Project Status
 
-**Current Phase:** 5/7 Complete  
-**Test Status:** All tests passing  
+**Current Phase:** Functional Server Implementation
+**Test Status:** All tests passing
 **Code Quality:** High maintainability
 
 ## Project Structure
@@ -15,9 +15,9 @@ json-iec104-server/
 ├── src/                    # Source code (modular design)
 │   ├── config/            # Configuration management
 │   ├── data/              # Data type system & management
-│   ├── protocol/          # Protocol handlers
+│   ├── protocol/          # Protocol handlers (Interrogation, Commands)
 │   ├── utils/             # Error handling & logging
-│   └── threads/           # Thread management (future)
+│   └── threads/           # Thread management
 ├── tests/                 # Comprehensive test suite
 ├── lib60870/              # IEC 60870-5-104 library
 ├── cJSON/                 # JSON parser
@@ -26,12 +26,13 @@ json-iec104-server/
 
 ## Features
 
-### Implemented (Phases 1-5)
+### Implemented Features
 
 - **Generic Data Type System** - Handles all 10 IEC104 data types
 - **Smart Data Management** - Generic update functions with deadband
 - **Flexible Configuration** - JSON-based config with generic parsing
 - **Protocol Handlers** - Generic interrogation with ASDU chunking
+- **Command Handling** - Support for **Direct** and **SBO** (Select-Before-Operate) modes
 - **Error Handling** - Structured error codes with JSON logging
 - **Structured Logging** - 4 log levels with JSON output
 - **Comprehensive Testing** - 5 test suites, all passing
@@ -97,11 +98,11 @@ make test5  # Utils (error codes & logger)
 | Max Function Size | <100 lines | Good |
 | Cyclomatic Complexity | <10 | Low |
 | Test Coverage | 100% | Complete |
-| Modules | 4 | Well-organized |
+| Modules | 5 | Well-organized |
 
 ## API Documentation
 
-See `PROGRESS_REPORT.md` for detailed API documentation and examples.
+See `docs/API.md` for detailed API documentation and `docs/USER_GUIDE.md` for configuration and usage instructions.
 
 ## Testing
 
@@ -126,6 +127,6 @@ See `PROGRESS_REPORT.md` for detailed API documentation and examples.
 
 ---
 
-**Status:** Production-ready modules, ready for integration  
-**Last Updated:** 2025-11-20  
-**Version:** 0.5.0 (5 phases complete)
+**Status:** Production-ready modules, ready for integration
+**Last Updated:** 2025-11-20
+**Version:** 1.0.0 (SBO Support Added)
