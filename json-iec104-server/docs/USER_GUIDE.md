@@ -141,7 +141,7 @@ The server uses JSON configuration files. Create `config.json`:
 | `offline_udt_time` | uint32 | Offline update time (ms) | 5000 |
 | `deadband_M_ME_NC_1_percent` | float | Deadband for float values (%) | 1.0 |
 | `asdu` | int | ASDU address | 1 |
-| `command_mode` | string | Command mode: "direct" or "select" | "direct" |
+| `command_mode` | string | Command mode: "direct" or "sbo" | "direct" |
 | `port` | int | TCP port | 2404 |
 | `local_ip` | string | Local IP address | "0.0.0.0" |
 
